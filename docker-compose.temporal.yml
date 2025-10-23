@@ -1,0 +1,31 @@
+version: "3.9"
+services:
+  temporal:
+    image: temporalio/auto-setup:1.26
+    container_name: temporal
+    environment:
+      - DB=sqlite
+      - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/development.yaml
+    ports:
+      - "7233:7233" # gRPC
+    healthcheck:
+      test: ["CMD", "temporal", "operator", "cluster", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  temporal-web:
+    image: temporalio/web:2.39
+    container_name: temporal-web
+    environment:
+      - TEMPORAL_GRPC_ENDPOINT=temporal:7233
+      - TEMPORAL_WEB_PORT=8080
+    ports:
+      - "8233:8080" # Web UI
+    depends_on:
+      temporal:
+        condition: service_healthy
+
+networks:
+  default:
+    name: temporal-network

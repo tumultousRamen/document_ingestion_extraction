@@ -53,5 +53,26 @@ model Broker {
 
     properties Address[] @relation(name: "brokerAddresses")
 
+    documents Document[] @relation(name: "brokerDocuments")
+
+    metadata    Json?
+
     @@index([name])
+}
+
+model Document {
+    id String @id @default(cuid())
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    name String
+    type String?
+    fullText String?
+    fileHash String?
+
+    objectKey String
+    thumbnailKey String?
+
+    brokerId String?
+    broker Broker? @relation(name: "brokerDocuments", fields: [brokerId], references: [id])
 }

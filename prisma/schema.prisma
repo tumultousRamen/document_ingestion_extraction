@@ -10,11 +10,48 @@ datasource db {
     url      = env("DATABASE_URL")
 }
 
-model Post {
-    id        Int      @id @default(autoincrement())
-    name      String
+model Address {
+    id        String   @id @default(cuid())
     createdAt DateTime @default(now())
     updatedAt DateTime @updatedAt
+
+    inCareOfName  String?
+    streetAddress String?
+    unitType      String?
+    unitNumber    String?
+    cityTown      String?
+    state         String?
+    zipCode       String?
+    province      String?
+    postalCode    String?
+    country       String  @default("US")
+
+    broker Broker? @relation(name: "brokerAddresses", fields: [brokerId], references: [id])
+    brokerId String?
+}
+
+model Broker {
+    id String @id @default(uuid())
+    name String
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    email String @unique
+    phone String?
+
+    // Brokerage address
+    inCareOfName  String?
+    streetAddress String?
+    unitType      String?
+    unitNumber    String?
+    cityTown      String?
+    state         String?
+    zipCode       String?
+    province      String?
+    postalCode    String?
+    country       String  @default("US")
+
+    properties Address[] @relation(name: "brokerAddresses")
 
     @@index([name])
 }

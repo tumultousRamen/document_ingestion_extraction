@@ -11,6 +11,18 @@ export const env = createEnv({
     NODE_ENV: z
       .enum(["development", "test", "production"])
       .default("development"),
+    ANTHROPIC_KEY: z.string(),
+    REDUCTO_KEY: z.string(),
+    S3_BUCKET_NAME: z.string(),
+    S3_REGION: z.string(),
+    AWS_ACCESS_KEY_ID: z.string(),
+    AWS_SECRET_ACCESS_KEY: z.string(),
+    TEMPORAL_TLS_CLIENT_CERT: z.string(),
+    TEMPORAL_TLS_CLIENT_KEY: z.string(),
+    REDIS_URL: z.string(),
+    BASE_URL: z.string(),
+    BEDROCK_USER_ACCESS_KEY: z.string(),
+    BEDROCK_USER_SECRET_KEY: z.string(),
   },
 
   /**
@@ -29,6 +41,18 @@ export const env = createEnv({
   runtimeEnv: {
     DATABASE_URL: process.env.DATABASE_URL,
     NODE_ENV: process.env.NODE_ENV,
+    ANTHROPIC_KEY: process.env.ANTHROPIC_KEY,
+    REDUCTO_KEY: process.env.REDUCTO_KEY,
+    S3_BUCKET_NAME: process.env.S3_BUCKET_NAME,
+    S3_REGION: process.env.S3_REGION,
+    AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID,
+    AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY,
+    TEMPORAL_TLS_CLIENT_CERT: process.env.TEMPORAL_TLS_CLIENT_CERT,
+    TEMPORAL_TLS_CLIENT_KEY: process.env.TEMPORAL_TLS_CLIENT_KEY,
+    REDIS_URL: process.env.REDIS_URL,
+    BASE_URL: process.env.BASE_URL,
+    BEDROCK_USER_ACCESS_KEY: process.env.BEDROCK_USER_ACCESS_KEY,
+    BEDROCK_USER_SECRET_KEY: process.env.BEDROCK_USER_SECRET_KEY,
     // NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
   },
   /**

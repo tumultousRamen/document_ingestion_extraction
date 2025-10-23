@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { createTRPCRouter, publicProcedure } from "../trpc";
 import { putObject } from "~/server/s3";
+import { getTemporalClient } from "~/temporal/client";
 
 export const uploadRouter = createTRPCRouter({
   upload: publicProcedure
@@ -39,6 +40,7 @@ export const uploadRouter = createTRPCRouter({
 
       //Documents have been uploaded, created a scaffolded out document records in the database.
       // Now kick off temporal workflow to proocess uploaded documents.
+      const temporalClient = await getTemporalClient();
       
     }),
 });

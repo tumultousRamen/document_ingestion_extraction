@@ -30,6 +30,13 @@ model Address {
     brokerId String?
 }
 
+enum ProcessingStatus {
+    CREATED
+    PROCESSING
+    COMPLETED
+    ERROR
+}
+
 model Broker {
     id String @id @default(uuid())
     name String
@@ -38,6 +45,8 @@ model Broker {
 
     email String @unique
     phone String?
+
+    processingStatus ProcessingStatus @default(CREATED)
 
     // Brokerage address
     inCareOfName  String?
@@ -64,6 +73,8 @@ model Document {
     id String @id @default(cuid())
     createdAt DateTime @default(now())
     updatedAt DateTime @updatedAt
+
+    processingStatus ProcessingStatus @default(CREATED)
 
     name String
     type String?

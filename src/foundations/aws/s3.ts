@@ -7,6 +7,7 @@ import {
   S3Client,
   type S3ServiceException,
 } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { env } from "~/environ.js";
 
 export const s3Client = new S3Client({
@@ -23,6 +24,11 @@ type HeadResult = {
   exists: boolean;
   contentType?: string;
   contentLength?: number;
+};
+
+type S3SignedURLs = {
+  GET: string;
+  PUT: string;
 };
 
 export async function headObject(
@@ -109,3 +115,33 @@ export async function deleteObject(
 ): Promise<void> {
   await s3Client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
 }
+
+export const getPresignedUrls = async ({
+  key,
+  bucket = S3_BUCKET_NAME,
+  expiresIn = 86400, // 1 day in seconds
+}: {
+  key: string;
+  bucket?: string;
+  expiresIn?: number;
+}): Promise<S3SignedURLs> => {
+  const getCmd = new GetObjectCommand({
+    Bucket: bucket,
+    Key: key,
+  });
+
+  const get = await getSignedUrl(s3Client, getCmd, {
+    expiresIn: expiresIn,
+  });
+
+  const putCmd = new PutObjectCommand({
+    Bucket: bucket,
+    Key: key,
+  });
+
+  const put = await getSignedUrl(s3Client, putCmd, {
+    expiresIn: expiresIn,
+  });
+
+  return { GET: get, PUT: put };
+};

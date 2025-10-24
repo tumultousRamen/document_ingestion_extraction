@@ -59,6 +59,6 @@ const addressValidator = z.object({
     ),
 });
 
-type Address = z.infer<typeof addressValidator>;
+type AddressDTO = z.infer<typeof addressValidator>;
 
-export { addressValidator, type Address };
+export { addressValidator, type AddressDTO };

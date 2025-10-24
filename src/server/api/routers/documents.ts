@@ -6,8 +6,11 @@ import { z } from "zod";
 import { createTRPCRouter, publicProcedure } from "../trpc";
 import { putObject } from "~/foundations/aws/s3";
 import { getTemporalClient } from "~/temporal/client";
+import { processDocument } from "~/temporal/workflows/process";
 
-export const documentsRouter = createTRPCRouter({
+const temporalClient = await getTemporalClient();
+
+const documentsRouter = createTRPCRouter({
   upload: publicProcedure
     .input(
       z.object({
@@ -16,7 +19,7 @@ export const documentsRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ ctx, input }) => {
-      const { files } = input;
+      const { files, brokerId } = input;
 
       const results = await Promise.all(
         files.map(async (file) => {
@@ -30,7 +33,7 @@ export const documentsRouter = createTRPCRouter({
         }),
       );
 
-      const documents = await ctx.db.document.createMany({
+      const documents = await ctx.db.document.createManyAndReturn({
         data: results.map(({ objectKey, file }) => ({
           objectKey,
           name: file.name,
@@ -38,7 +41,7 @@ export const documentsRouter = createTRPCRouter({
           size: file.size,
           broker: {
             connect: {
-              brokerId: input.brokerId,
+              brokerId,
             },
           },
         })),
@@ -46,5 +49,18 @@ export const documentsRouter = createTRPCRouter({
 
       //Documents have been uploaded, created a scaffolded out document records in the database.
       // Now kick off temporal workflow to proocess uploaded documents.
+      await Promise.all(
+        documents.map(async (document) => {
+          await temporalClient.workflow.start(processDocument, {
+            workflowId: `process-document-${document.id}`,
+            taskQueue: process.env.TEMPORAL_TASK_QUEUE ?? "default-task-queue",
+            workflowExecutionTimeout: "1 hour",
+            workflowRunTimeout: "1 hour",
+            args: [{ document, brokerId }],
+          });
+        }),
+      );
     }),
 });
+
+export { documentsRouter };

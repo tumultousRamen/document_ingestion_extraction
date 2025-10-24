@@ -8,6 +8,7 @@ import { createTRPCRouter, publicProcedure } from "../trpc";
 import { z } from "zod";
 import { putObject } from "~/foundations/aws/s3";
 import { getTemporalClient } from "~/temporal/client";
+import { processBroker } from "~/temporal/workflows/process";
 
 const temporalClient = await getTemporalClient();
 
@@ -36,6 +37,14 @@ const brokerRouter = createTRPCRouter({
         },
       });
 
-      
+      await temporalClient.workflow.start(processBroker, {
+        workflowId: `process-document-${document.id}`,
+        taskQueue: process.env.TEMPORAL_TASK_QUEUE ?? "default-task-queue",
+        args: [{ document }],
+      });
+
+      return document;
     }),
 });
+
+export { brokerRouter };

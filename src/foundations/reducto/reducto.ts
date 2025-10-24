@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { env } from "~/environ.js";
+import { env } from "~/env.js";
 
 // Minimal types for parse-only client
 export type ParsedChunk = {
@@ -54,7 +54,7 @@ export type ParseOptions = {
 
 export async function parseDocument(
   url: string,
-  { pageRange, chunkMode = 'page', useFigureSummary = true }: ParseOptions = {},
+  { pageRange, chunkMode = "page", useFigureSummary = true }: ParseOptions = {},
 ): Promise<ParseFullResult> {
   const body = {
     document_url: url,

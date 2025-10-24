@@ -17,6 +17,7 @@ export const envResult = z
     BASE_URL: z.string(),
     BEDROCK_USER_ACCESS_KEY: z.string(),
     BEDROCK_USER_SECRET_KEY: z.string(),
+    TEMPORAL_TASK_QUEUE: z.string(),
   })
   .safeParse(process.env);
 

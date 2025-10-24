@@ -1,5 +1,5 @@
 import type { ZodTypeAny, ZodType } from "zod";
-import { env } from "~/environ.js";
+import { env } from "~/env.js";
 
 // Minimal types to keep the client small and focused
 export type Role = "system" | "user" | "assistant";

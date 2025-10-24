@@ -1,53 +1,195 @@
-import Link from "next/link";
+"use client";
 
-import { LatestPost } from "~/app/_components/post";
-import { api, HydrateClient } from "~/trpc/server";
+import { useState, useMemo, useCallback, useEffect } from "react";
+import { useDropzone } from "react-dropzone";
+import { Upload, Mail, Files } from "lucide-react";
+import { api } from "~/trpc/react";
 
-export default async function Home() {
-  const hello = await api.post.hello({ text: "from tRPC" });
+export default function Home() {
+  const [documentId, setDocumentId] = useState<string | null>(null);
+  const [brokerId, setBrokerId] = useState<string | null>(null);
 
-  void api.post.getLatest.prefetch();
+  // Poll for the broker after correspondence upload
+  const brokerByDoc = api.broker.getByDocumentId.useQuery(
+    { documentId: documentId ?? "" },
+    {
+      enabled: !!documentId && !brokerId,
+      refetchInterval: brokerId ? false : 2000,
+    },
+  );
+
+  // Step 1: Upload correspondence (single file)
+  const getUploadUrlMutation = api.broker.getUploadUrl.useMutation();
+  const createBrokerMutation = api.broker.create.useMutation({
+    onSuccess: async (doc) => {
+      setDocumentId(doc.id);
+    },
+  });
+
+  useEffect(() => {
+    if (brokerByDoc.data?.id && !brokerId) {
+      setBrokerId(brokerByDoc.data.id);
+    }
+  }, [brokerByDoc.data?.id, brokerId]);
+
+  async function uploadToPresigned(url: string, file: File) {
+    const res = await fetch(url, {
+      method: "PUT",
+      body: file,
+    });
+    if (!res.ok) throw new Error("Failed to upload to S3");
+  }
+
+  const onDropCorrespondence = useCallback(
+    (acceptedFiles: File[]) => {
+      void (async () => {
+        const [file] = acceptedFiles;
+        if (!file) return;
+        // Get presigned URL, upload, then create broker document by objectKey
+        const { objectKey, url } = await getUploadUrlMutation.mutateAsync({
+          name: file.name,
+          type: file.type,
+        });
+        await uploadToPresigned(url, file);
+        createBrokerMutation.mutate({
+          objectKey,
+          name: file.name,
+          type: file.type,
+        });
+      })();
+    },
+    [createBrokerMutation, getUploadUrlMutation],
+  );
+
+  const correspondenceDrop = useDropzone({
+    onDrop: onDropCorrespondence,
+    multiple: false,
+  });
+
+  // Step 2: Upload supporting documents (up to 10)
+  const getUploadUrlsMutation = api.documents.getUploadUrls.useMutation();
+  const uploadDocsMutation = api.documents.upload.useMutation();
+  const [selectedDocs, setSelectedDocs] = useState<File[]>([]);
+
+  const onDropDocuments = useCallback((acceptedFiles: File[]) => {
+    setSelectedDocs((prev) => {
+      const combined = [...prev, ...acceptedFiles];
+      return combined.slice(0, 10);
+    });
+  }, []);
+
+  const documentsDrop = useDropzone({
+    onDrop: onDropDocuments,
+    multiple: true,
+    maxFiles: 10,
+  });
+
+  const canUploadDocs = useMemo(
+    () => brokerId !== null && selectedDocs.length > 0,
+    [brokerId, selectedDocs.length],
+  );
+
+  const handleUploadDocuments = useCallback(async () => {
+    if (!brokerId || selectedDocs.length === 0) return;
+    // Request presigned URLs, upload, then send objectKeys to server
+    const { entries } = await getUploadUrlsMutation.mutateAsync({
+      files: selectedDocs.map((f) => ({ name: f.name, type: f.type })),
+    });
+    await Promise.all(
+      entries.map(async (e: { url: string }, idx: number) => {
+        await uploadToPresigned(e.url, selectedDocs[idx]!);
+      }),
+    );
+    uploadDocsMutation.mutate({
+      brokerId,
+      files: entries.map(
+        (e: { objectKey: string; name: string; type?: string }) => ({
+          objectKey: e.objectKey,
+          name: e.name,
+          type: e.type,
+        }),
+      ),
+    });
+  }, [brokerId, selectedDocs, getUploadUrlsMutation, uploadDocsMutation]);
 
   return (
-    <HydrateClient>
-      <main className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-b from-[#2e026d] to-[#15162c] text-white">
-        <div className="container flex flex-col items-center justify-center gap-12 px-4 py-16">
-          <h1 className="text-5xl font-extrabold tracking-tight sm:text-[5rem]">
-            Create <span className="text-[hsl(280,100%,70%)]">T3</span> App
-          </h1>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:gap-8">
-            <Link
-              className="flex max-w-xs flex-col gap-4 rounded-xl bg-white/10 p-4 hover:bg-white/20"
-              href="https://create.t3.gg/en/usage/first-steps"
-              target="_blank"
-            >
-              <h3 className="text-2xl font-bold">First Steps →</h3>
-              <div className="text-lg">
-                Just the basics - Everything you need to know to set up your
-                database and authentication.
-              </div>
-            </Link>
-            <Link
-              className="flex max-w-xs flex-col gap-4 rounded-xl bg-white/10 p-4 hover:bg-white/20"
-              href="https://create.t3.gg/en/introduction"
-              target="_blank"
-            >
-              <h3 className="text-2xl font-bold">Documentation →</h3>
-              <div className="text-lg">
-                Learn more about Create T3 App, the libraries it uses, and how
-                to deploy it.
-              </div>
-            </Link>
-          </div>
-          <div className="flex flex-col items-center gap-2">
-            <p className="text-2xl text-white">
-              {hello ? hello.greeting : "Loading tRPC query..."}
-            </p>
-          </div>
+    <main className="mx-auto max-w-3xl p-6">
+      <h1 className="mb-6 text-2xl font-semibold">
+        Insurance Submission Ingest
+      </h1>
 
-          <LatestPost />
+      <section className="mb-8 rounded-lg border p-4">
+        <header className="mb-4 flex items-center gap-2">
+          <Mail className="h-5 w-5" />
+          <h2 className="text-lg font-medium">Step 1: Upload Correspondence</h2>
+        </header>
+        <div
+          {...correspondenceDrop.getRootProps({
+            className:
+              "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-dashed p-8 text-center hover:bg-gray-50",
+          })}
+        >
+          <input {...correspondenceDrop.getInputProps()} />
+          <Upload className="h-8 w-8" />
+          <p className="text-sm text-gray-700">
+            Drag &apos;n&apos; drop the correspondence file here, or click to
+            select a file
+          </p>
+          <p className="text-xs text-gray-500">Only one file is allowed</p>
         </div>
-      </main>
-    </HydrateClient>
+        {createBrokerMutation.isPending && (
+          <p className="mt-2 text-sm text-gray-600">Uploading…</p>
+        )}
+        {documentId && !brokerId && (
+          <p className="mt-2 text-sm text-gray-600">
+            Correspondence uploaded. Waiting for broker extraction…
+          </p>
+        )}
+        {brokerId && (
+          <p className="mt-2 text-sm text-green-700">
+            Broker extracted. You can upload supporting documents now.
+          </p>
+        )}
+      </section>
+
+      <section className="rounded-lg border p-4">
+        <header className="mb-4 flex items-center gap-2">
+          <Files className="h-5 w-5" />
+          <h2 className="text-lg font-medium">Step 2: Upload Documents</h2>
+        </header>
+        <div
+          {...documentsDrop.getRootProps({
+            className:
+              "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-dashed p-8 text-center hover:bg-gray-50",
+          })}
+        >
+          <input {...documentsDrop.getInputProps()} />
+          <Upload className="h-8 w-8" />
+          <p className="text-sm text-gray-700">
+            Drag &apos;n&apos; drop up to 10 supporting documents here, or click
+            to select files
+          </p>
+        </div>
+        {selectedDocs.length > 0 && (
+          <ul className="mt-3 list-disc space-y-1 pl-6 text-sm text-gray-700">
+            {selectedDocs.map((f, idx) => (
+              <li key={idx}>{f.name}</li>
+            ))}
+          </ul>
+        )}
+        <div className="mt-4">
+          <button
+            onClick={handleUploadDocuments}
+            disabled={!canUploadDocs || uploadDocsMutation.isPending}
+            className="inline-flex items-center gap-2 rounded-md bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          >
+            <Upload className="h-4 w-4" /> Upload
+          </button>
+          {uploadDocsMutation.isPending && (
+            <span className="ml-2 text-sm text-gray-600">Uploading…</span>
+          )}
+        </div>
+      </section>
+    </main>
   );
 }

@@ -12,7 +12,7 @@ async function run(): Promise<void> {
   const worker = await Worker.create({
     workflowsPath,
     activities,
-    taskQueue: process.env.TEMPORAL_TASK_QUEUE ?? "default-task-queue",
+    taskQueue: process.env.TEMPORAL_TASK_QUEUE ?? "default",
   });
 
   await worker.run();

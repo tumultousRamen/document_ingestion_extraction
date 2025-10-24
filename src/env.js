@@ -23,6 +23,7 @@ export const env = createEnv({
     BASE_URL: z.string(),
     BEDROCK_USER_ACCESS_KEY: z.string(),
     BEDROCK_USER_SECRET_KEY: z.string(),
+    TEMPORAL_TASK_QUEUE: z.string(),
   },
 
   /**
@@ -53,6 +54,7 @@ export const env = createEnv({
     BASE_URL: process.env.BASE_URL,
     BEDROCK_USER_ACCESS_KEY: process.env.BEDROCK_USER_ACCESS_KEY,
     BEDROCK_USER_SECRET_KEY: process.env.BEDROCK_USER_SECRET_KEY,
+    TEMPORAL_TASK_QUEUE: process.env.TEMPORAL_TASK_QUEUE,
     // NEXT_PUBLIC_CLIENTVAR: process.env.NEXT_PUBLIC_CLIENTVAR,
   },
   /**

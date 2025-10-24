@@ -39,6 +39,7 @@ const brokerRouter = createTRPCRouter({
       return ctx.db.broker.findMany({
         orderBy: { createdAt: "desc" },
         take: limit,
+        include: { properties: true, documents: true },
       });
     }),
   getByDocumentId: publicProcedure
@@ -54,6 +55,22 @@ const brokerRouter = createTRPCRouter({
           documents: {
             some: { id: documentId },
           },
+        },
+      });
+    }),
+  getDetails: publicProcedure
+    .input(
+      z.object({
+        brokerId: z.string(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const { brokerId } = input;
+      return ctx.db.broker.findUnique({
+        where: { id: brokerId },
+        include: {
+          properties: true,
+          documents: true,
         },
       });
     }),

@@ -1,5 +1,7 @@
 import type { ZodTypeAny, ZodType } from "zod";
 import { env } from "~/env.js";
+import { zodToJsonSchema } from "zod-to-json-schema";
+import { z } from "zod";
 
 // Minimal types to keep the client small and focused
 export type Role = "system" | "user" | "assistant";
@@ -91,6 +93,106 @@ export async function handleChatCompletion({
   return firstText.text;
 }
 
+export function validateAsAnthropicTool<T extends z.ZodTypeAny>({
+  name,
+  validator,
+  description,
+}: {
+  name: string;
+  validator: T;
+  description?: string;
+}) {
+  const schema = zodToJsonSchema(validator);
+
+  // remove $schema key
+  delete schema.$schema;
+
+  const asObjectSchema = z
+    .object({
+      type: z.literal("object"),
+    })
+    .passthrough()
+    .parse(schema);
+
+  return {
+    name,
+    description,
+    input_schema: asObjectSchema,
+  };
+}
+
+async function fixToolCallArguments<T>({
+  error,
+  previousArguments,
+  resolver,
+  functionName,
+  toolChoice,
+}: {
+  error: z.ZodError;
+  previousArguments: unknown;
+  resolver: z.ZodType<T>;
+  functionName: string;
+  toolChoice?: ToolChoice;
+}): Promise<T> {
+  const body: Record<string, unknown> = {
+    model: "claude-3-5-sonnet-20241022",
+    messages: [
+      {
+        role: "user",
+        content:
+          "You are an AI assistant tasked with correcting invalid JSON output based on a zod error. You will be provided with a tool calling schema, a zod error, and the previous arguments that caused the error. Your goal is to analyze the error, correct the arguments, and output the corrected arguments in the proper JSON structure.\n\n" +
+          "Here is the zod error that was encountered:\n<zod_error>\n" +
+          JSON.stringify(error.format(), null, 2) +
+          "\n</zod_error>\n\nHere are the previous arguments that caused the error:\n<previous_arguments>\n" +
+          JSON.stringify(previousArguments, null, 2) +
+          "\n</previous_arguments>\n\nTo complete this task, follow these steps:\n\n1. Carefully analyze the zod error message. It will indicate which part of the JSON structure is invalid and why.\n\n2. Compare the error message with the tool calling schema and the previous arguments to identify the specific issues that need to be corrected.\n\n3. Make the necessary corrections to the arguments, ensuring that they conform to the structure and types specified in the tool calling schema.\n\n4. Output the corrected arguments in a structure that matches the tool calling schema. Make sure to include all required fields and use the correct data types.\n\n5. Double-check that your corrected output addresses all issues mentioned in the zod error and fully complies with the tool calling schema.",
+      },
+    ],
+    tools: [
+      validateAsAnthropicTool({
+        name: functionName,
+        validator: resolver as unknown as ZodTypeAny,
+      }),
+    ],
+    max_tokens: 1024,
+    temperature: 0,
+  };
+
+  if (toolChoice)
+    body.tool_choice = toolChoice as unknown as Record<string, unknown>;
+
+  const res = await fetch(ANTHROPIC_API_URL, {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    throw new Error(
+      `Anthropic tool call failed: ${res.status} ${res.statusText}`,
+    );
+  }
+
+  const data = (await res.json()) as AnthropicMessageCreateResponse;
+  const toolUse = data.content?.find((b) => b.type === "tool_use") as
+    | { type: "tool_use"; id: string; name: string; input: unknown }
+    | undefined;
+
+  if (!toolUse) {
+    throw new Error(
+      "Unexpected Anthropic response: missing tool_use for function (fix)",
+    );
+  }
+
+  const parsed = resolver.safeParse(toolUse.input);
+  if (!parsed.success) {
+    throw new Error(
+      `Invalid tool arguments returned by model after fix: ${parsed.error.message}`,
+    );
+  }
+  return parsed.data;
+}
+
 export async function handleToolCompletion<T>({
   messages,
   functionName,
@@ -107,16 +209,11 @@ export async function handleToolCompletion<T>({
   const { system, messages: convo } = mapToAnthropicMessages(messages);
 
   const tools = [
-    {
+    validateAsAnthropicTool({
       name: functionName,
+      validator: schema as unknown as ZodTypeAny,
       description: "Tool call schema",
-      input_schema: (
-        schema as unknown as ZodTypeAny & { toJSON?: () => unknown }
-      ).toJSON?.() ?? {
-        type: "object",
-      },
-      // Fallback minimal JSON‑schema if Zod's toJSON is not available
-    },
+    }),
   ];
 
   const body: Record<string, unknown> = {
@@ -155,9 +252,16 @@ export async function handleToolCompletion<T>({
     );
   }
 
-  const parsed = schema.safeParse(toolUse.input);
+  const parsed = (schema as unknown as z.ZodType<T>).safeParse(toolUse.input);
   if (!parsed.success) {
-    throw new Error("Invalid tool arguments returned by model");
+    // attempt to fix arguments using a follow-up tool call
+    return await fixToolCallArguments<T>({
+      error: parsed.error,
+      previousArguments: toolUse.input,
+      resolver: schema as unknown as z.ZodType<T>,
+      functionName,
+      toolChoice,
+    });
   }
   return parsed.data;
 }

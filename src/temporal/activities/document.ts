@@ -1,15 +1,12 @@
 import { parseDocument } from "~/foundations/reducto/reducto";
 import { getPresignedUrls } from "~/foundations/aws/s3";
 import { handleToolCompletion } from "~/foundations/anthropic/client";
-import { z } from "zod";
-import {
-  addressValidator,
-  type AddressDTO,
-} from "~/foundations/validators/address";
+import { type PropertiesDTO } from "~/foundations/validators/properties";
 import { propertiesSystemPrompt, buildPropertiesUserPrompt } from "./prompts";
 import { db } from "~/server/db";
-import type { Address } from "@prisma/client";
-
+import { propertiesValidator } from "~/foundations/validators/properties";
+import type { Address, Document } from "@prisma/client";
+import { z } from "zod";
 type ParseDocumentWithReductoArgs = {
   objectKey: string;
   delimiterStyle?: "simple" | "numbered";
@@ -43,27 +40,29 @@ export async function extractPropertiesFromDocument({
   parsedDocument,
 }: {
   parsedDocument: string;
-}): Promise<AddressDTO[]> {
+}): Promise<PropertiesDTO> {
   // use parsed text with tool call
   const functionName = "extract_properties";
-  const arraySchema = z.array(addressValidator);
+  const toolSchema = z.object({
+    properties: propertiesValidator,
+  });
   const messages = [
     { role: "system", content: propertiesSystemPrompt },
     { role: "user", content: buildPropertiesUserPrompt(parsedDocument) },
   ] as const;
 
-  const properties = await handleToolCompletion<AddressDTO[]>({
+  const result = await handleToolCompletion<z.infer<typeof toolSchema>>({
     messages: messages as unknown as {
       role: "system" | "user";
       content: string;
     }[],
     functionName,
-    schema: arraySchema,
+    schema: toolSchema,
     toolChoice: { type: "tool", name: functionName },
     options: { temperature: 0 },
   });
 
-  return properties;
+  return result.properties;
 }
 
 export async function createManyPropertiesForBroker({
@@ -71,7 +70,7 @@ export async function createManyPropertiesForBroker({
   properties,
 }: {
   brokerId: string;
-  properties: AddressDTO[];
+  properties: PropertiesDTO;
 }): Promise<Address[]> {
   if (!properties.length) return [];
 
@@ -116,4 +115,18 @@ export async function createManyPropertiesForBroker({
   }
 
   return created;
+}
+
+export async function linkDocumentToBroker({
+  documentId,
+  brokerId,
+}: {
+  documentId: string;
+  brokerId: string;
+}): Promise<Document> {
+  const updated = await db.document.update({
+    where: { id: documentId },
+    data: { brokerId },
+  });
+  return updated;
 }

@@ -8,8 +8,9 @@ const {
   createBroker,
   extractPropertiesFromDocument,
   createManyPropertiesForBroker,
+  linkDocumentToBroker,
 } = proxyActivities<typeof activities>({
-  startToCloseTimeout: "1 minute",
+  startToCloseTimeout: "15 minutes",
 });
 
 export async function processBroker({
@@ -22,8 +23,8 @@ export async function processBroker({
   });
 
   const extractedBroker = await extractBrokerFromDocument(parsed);
-
-  await createBroker(extractedBroker);
+  const broker = await createBroker(extractedBroker);
+  await linkDocumentToBroker({ documentId: document.id, brokerId: broker.id });
 }
 
 export async function processDocument({

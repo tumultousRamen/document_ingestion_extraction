@@ -1,13 +1,16 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useDropzone } from "react-dropzone";
-import { Upload, Mail, Files } from "lucide-react";
+import { Upload, Mail } from "lucide-react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { api } from "~/trpc/react";
 
 export default function Home() {
   const [documentId, setDocumentId] = useState<string | null>(null);
   const [brokerId, setBrokerId] = useState<string | null>(null);
+  const router = useRouter();
 
   // Poll for the broker after correspondence upload
   const brokerByDoc = api.broker.getByDocumentId.useQuery(
@@ -17,6 +20,8 @@ export default function Home() {
       refetchInterval: brokerId ? false : 2000,
     },
   );
+
+  const recentBrokers = api.broker.list.useQuery({ limit: 10 });
 
   // Step 1: Upload correspondence (single file)
   const getUploadUrlMutation = api.broker.getUploadUrl.useMutation();
@@ -31,6 +36,12 @@ export default function Home() {
       setBrokerId(brokerByDoc.data.id);
     }
   }, [brokerByDoc.data?.id, brokerId]);
+
+  useEffect(() => {
+    if (brokerId) {
+      router.push(`/brokers/${brokerId}`);
+    }
+  }, [brokerId, router]);
 
   async function uploadToPresigned(url: string, file: File) {
     const res = await fetch(url, {
@@ -66,52 +77,6 @@ export default function Home() {
     multiple: false,
   });
 
-  // Step 2: Upload supporting documents (up to 10)
-  const getUploadUrlsMutation = api.documents.getUploadUrls.useMutation();
-  const uploadDocsMutation = api.documents.upload.useMutation();
-  const [selectedDocs, setSelectedDocs] = useState<File[]>([]);
-
-  const onDropDocuments = useCallback((acceptedFiles: File[]) => {
-    setSelectedDocs((prev) => {
-      const combined = [...prev, ...acceptedFiles];
-      return combined.slice(0, 10);
-    });
-  }, []);
-
-  const documentsDrop = useDropzone({
-    onDrop: onDropDocuments,
-    multiple: true,
-    maxFiles: 10,
-  });
-
-  const canUploadDocs = useMemo(
-    () => brokerId !== null && selectedDocs.length > 0,
-    [brokerId, selectedDocs.length],
-  );
-
-  const handleUploadDocuments = useCallback(async () => {
-    if (!brokerId || selectedDocs.length === 0) return;
-    // Request presigned URLs, upload, then send objectKeys to server
-    const { entries } = await getUploadUrlsMutation.mutateAsync({
-      files: selectedDocs.map((f) => ({ name: f.name, type: f.type })),
-    });
-    await Promise.all(
-      entries.map(async (e: { url: string }, idx: number) => {
-        await uploadToPresigned(e.url, selectedDocs[idx]!);
-      }),
-    );
-    uploadDocsMutation.mutate({
-      brokerId,
-      files: entries.map(
-        (e: { objectKey: string; name: string; type?: string }) => ({
-          objectKey: e.objectKey,
-          name: e.name,
-          type: e.type,
-        }),
-      ),
-    });
-  }, [brokerId, selectedDocs, getUploadUrlsMutation, uploadDocsMutation]);
-
   return (
     <main className="mx-auto max-w-3xl p-6">
       <h1 className="mb-6 text-2xl font-semibold">
@@ -145,6 +110,11 @@ export default function Home() {
             Correspondence uploaded. Waiting for broker extraction…
           </p>
         )}
+        {documentId && brokerId && (
+          <p className="mt-2 text-sm text-green-700">
+            Broker extracted (ID: {brokerId}).
+          </p>
+        )}
         {brokerId && (
           <p className="mt-2 text-sm text-green-700">
             Broker extracted. You can upload supporting documents now.
@@ -152,43 +122,45 @@ export default function Home() {
         )}
       </section>
 
-      <section className="rounded-lg border p-4">
-        <header className="mb-4 flex items-center gap-2">
-          <Files className="h-5 w-5" />
-          <h2 className="text-lg font-medium">Step 2: Upload Documents</h2>
-        </header>
-        <div
-          {...documentsDrop.getRootProps({
-            className:
-              "flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-dashed p-8 text-center hover:bg-gray-50",
-          })}
-        >
-          <input {...documentsDrop.getInputProps()} />
-          <Upload className="h-8 w-8" />
-          <p className="text-sm text-gray-700">
-            Drag &apos;n&apos; drop up to 10 supporting documents here, or click
-            to select files
-          </p>
-        </div>
-        {selectedDocs.length > 0 && (
-          <ul className="mt-3 list-disc space-y-1 pl-6 text-sm text-gray-700">
-            {selectedDocs.map((f, idx) => (
-              <li key={idx}>{f.name}</li>
+      <div className="mt-6 text-sm text-gray-700">
+        <Link className="underline" href="/brokers">
+          View all brokers
+        </Link>
+      </div>
+
+      {/* Broker details removed from home; redirect takes user to /brokers/[id] */}
+
+      <section className="mt-8 rounded-lg border p-4">
+        <h3 className="mb-3 text-lg font-semibold">Recent Brokers</h3>
+        {recentBrokers.data?.length ? (
+          <ul className="grid grid-cols-1 gap-2 text-sm text-gray-800">
+            {recentBrokers.data.map((b) => (
+              <li key={b.id} className="rounded-md border p-3">
+                <div className="font-medium">{b.name}</div>
+                <div className="text-gray-700">{b.email}</div>
+                <div className="text-gray-700">
+                  {[
+                    b.streetAddress,
+                    b.unitType && `${b.unitType} ${b.unitNumber}`,
+                    b.cityTown,
+                    b.state,
+                    b.zipCode,
+                  ]
+                    .filter(Boolean)
+                    .join(", ")}
+                </div>
+                {b.properties?.length ? (
+                  <div className="mt-1 text-xs text-gray-600">
+                    {b.properties.length} properties ·{" "}
+                    {b.documents?.length ?? 0} documents
+                  </div>
+                ) : null}
+              </li>
             ))}
           </ul>
+        ) : (
+          <p className="text-sm text-gray-600">No brokers yet.</p>
         )}
-        <div className="mt-4">
-          <button
-            onClick={handleUploadDocuments}
-            disabled={!canUploadDocs || uploadDocsMutation.isPending}
-            className="inline-flex items-center gap-2 rounded-md bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-          >
-            <Upload className="h-4 w-4" /> Upload
-          </button>
-          {uploadDocsMutation.isPending && (
-            <span className="ml-2 text-sm text-gray-600">Uploading…</span>
-          )}
-        </div>
       </section>
     </main>
   );
